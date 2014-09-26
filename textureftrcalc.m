@@ -1,14 +1,17 @@
-function [F,E,X] = textureftrcalc(d,sr)
-% F = textureftrcalc(d,sr)
+function [F,E,X,frqs] = textureftrcalc(d,sr,thresh_db)
+% F = textureftrcalc(d,sr,thresh_db)
 %   Calculate "texture features" for input soundfile.
 %   Input data is waveform d (at samplerate sr)
 %   OR file named by string d
 %   OR list of files in cell array d
 %   Output F is a 200xN array of features (or cell array of arrays
 %   if input is cell array).
+%   thresh_db specifies threshold in dB below peak for silence
+%   trimming (default 40.0).
 % 2010-08-10 Dan Ellis dpwe@ee.columbia.edu
 
 if nargin < 2;  sr = 0;  end  % just to avoid problems passing down
+if nargin < 3;  thresh_db = 40; end
 
 if iscell(d)
   nd = length(d);
@@ -48,7 +51,8 @@ end
 % 7. Calculate modulation energy proportions in octaves for each band
 
 % 1. trim off any silence at start/end
-[initialsil,finalsil] = findnonsilent(d,sr);
+win_ms = 32.0;
+[initialsil,finalsil] = findnonsilent(d,sr, win_ms, thresh_db);
 d = d(initialsil:finalsil);
 
 % 2. Apply AGC
@@ -60,7 +64,7 @@ D = D./E;
 
 % 3. Take auditory spectrogram
 nfft = 2*(size(D,1)-1);  % fft from tf_agc
-f2b = fft2melmx(nfft,sr);
+[f2b,frqs] = fft2melmx(nfft,sr);
 f2b = f2b(:,1:size(D,1));
 DA = f2b*abs(D);
 
@@ -103,6 +107,8 @@ for fr = 1:nenvfr
   F(fr,3*nbands+[1:nbands]) = MVSK(:,4);
   
   % 6. Calculate spectral flatness mean & variance in each band
+
+  
   % 7. Calculate modulation energy proportions in octaves for each band
 
   % replace NaNs with floor value
@@ -117,8 +123,13 @@ for fr = 1:nenvfr
   F(fr,7*nbands+[1:nbands]) = MSE(:,end-2);
   F(fr,8*nbands+[1:nbands]) = MSE(:,end-1);
   F(fr,9*nbands+[1:nbands]) = MSE(:,end-0);
+
+  % 8. Cross-band correlations
+%  lags = [3 6 9]; % 36 elements
+  lags = [3 6 9 1 2 4 5 7 8 10 11 12];  % 138 elements
+  F(fr,10*nbands+[1:(nbands*length(lags)-sum(lags))]) = xbandxcorr(envfr,lags);
   
-  if fr == 2
+  if fr == 1
     % debug output
     X = envfr;
   end
